@@ -89,9 +89,9 @@ DARK_MODE=True if os.getenv('XBARDarkMode','false') == 'true' else False
 MY_CLIENT_ID = ""
 MY_CLIENT_SECRET = ""
 
-try: 
-   MY_CLIENT_ID = keychain.getpass("myhusqvarna-xbar","client_id")
-   MY_CLIENT_SECRET = keychain.getpass("myhusqvarna-xbar","client_secret")
+try:
+   MY_CLIENT_ID = keyring.get_password("myhusqvarna-xbar","client_id")
+   MY_CLIENT_SECRET = keyring.get_password("myhusqvarna-xbar","client_secret")
 except: 
    pass
 
@@ -124,7 +124,7 @@ def pretty_print_activity(Activity):
       case "UNKNOWN":
          return "Unknown"
       case "NOT_APPLICABLE":
-         return "Not applicable"
+         return "Paused"
       case "MOWING":
          return "Mowing" 
       case "GOING_HOME":
@@ -219,14 +219,21 @@ def get_oauth_token(client_id, client_secret):
     response = requests.post(AUTH_ENDPOINT, data=encoded_data, headers=headers)
 
     if response.status_code == 200:
-        print("Login succesful")
-        print(response.content)
+        #print("Login succesful")
+        #print(response.content)
         token_data = response.json()
         return token_data["access_token"]
     else:
         print("Error obtaining access token!")
         print(response.content)
         return None
+
+def refresh_oauth_token():
+    refreshed_access_token = get_oauth_token(MY_CLIENT_ID,MY_CLIENT_SECRET)
+    if not (refreshed_access_token == None):
+        #print("refreshing key")
+        keyring.set_password("myhusqvarna-xbar","access_token",refreshed_access_token)
+    return refreshed_access_token
 
 
 def get_mowers(access_token,client_id):
@@ -242,6 +249,17 @@ def get_mowers(access_token,client_id):
     if response.status_code == 200:
         mowers_data = response.json()["data"]
         return mowers_data
+    elif response.status_code == 401:
+        refreshed_access_token = refresh_oauth_token()
+        if not (refreshed_access_token == None):
+            return get_mowers(refreshed_access_token,client_id)
+        app_print_logo()
+        print('error - empty mower list')
+        #print(response.text)
+    else:
+        app_print_logo()
+        print('error - invalid credentials')    
+        #print(response.text)
     return None
 
 
@@ -280,9 +298,13 @@ def init():
     print ('Enter your Husqvarna client_id:')
     print ('Hint: '+MY_CLIENT_ID)
     init_client_id = getpass.getpass()
+    if (init_client_id == ""): 
+        init_client_id = MY_CLIENT_ID
     print ('Enter your Husqvarna client_secret:')
     print ('Hint: '+MY_CLIENT_SECRET)
     init_client_secret = getpass.getpass()
+    if (init_client_secret == ""):
+        init_client_secret = MY_CLIENT_SECRET
     init_access_token = None
 
     try:
@@ -305,7 +327,6 @@ def init():
     keyring.set_password("myhusqvarna-xbar","access_token",init_access_token)
     init_client_secret = ''
     init_client_id = ''
-
 
 
 
@@ -351,7 +372,8 @@ def main(argv):
     # CASE 3b: init was not called, keyring initialized, no connection (access code not valid)
     try:
        mowers_data = get_mowers(ACCESS_TOKEN,CLIENT_ID)
-    except: 
+    except Exception as e:
+       print (e)
        app_print_logo()
        print ('Login to Husqvarna | refresh=true terminal=true shell="%s" param1="%s" color=%s' % (cmd_path, 'init', color))
        return
