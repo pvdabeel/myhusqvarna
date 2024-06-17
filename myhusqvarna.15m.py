@@ -365,7 +365,7 @@ def main(argv):
        requests.get('http://www.google.com',timeout=3)
     except:
        app_print_logo()
-       print ('No internet connection | refresh=true terminal=false shell="%s" param1="%s" color=%s' % (cmd_path, 'true', color))
+       print ('\nNo internet connection | refresh=true terminal=false shell="%s" param1="%s" color=%s' % (cmd_path, 'true', color))
        return
 
 
