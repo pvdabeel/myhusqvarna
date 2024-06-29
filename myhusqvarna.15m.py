@@ -107,9 +107,9 @@ AUTOMOWER_CONNECT_ENDPOINT = "https://api.amc.husqvarna.dev/v1"
 def pretty_print_mode(Mode):
    match Mode: 
       case "MAIN_AREA":
-         return "Main Area"
+         return "Main Area, scheduled"
       case "SECONDARY_AREA":
-         return "Secundary Area"
+         return "Secundary Area, scheduled"
       case "HOME":
          return "Until further notice"
       case "DEMO":
@@ -167,6 +167,12 @@ def pretty_print_state(STATE):
       case "ERROR_AT_POWER_UP":
          return "Error during power up"
 
+# Pretty print cutting height setting                                             
+def color_setting(current,option,color,info_color):                             
+    if (current == option):                                                     
+        return color                                                            
+    else:                                                                       
+        return info_color  
 
 # Function to retrieve goole map & sat images for a given location
 def retrieve_google_maps(latitude,longitude):
@@ -263,22 +269,38 @@ def get_mowers(access_token,client_id):
     return None
 
 
-def mower_send_cmd(accessToken,client_id,Command,Arg):
-    requestOptions = {
-        method: 'POST',
-        headers: {
-            'Authorization': 'Bearer ${accessToken}',
-            'X-Api-Key': client_id,
-            'Authorization-Provider': 'husqvarna',
-            'Content-Type': 'application/vnd.api+json'
-        },
-        body: JSON.stringify({
-            data: {
-                'type': 'Pause',       # Pause, ParkUntilNextSchedule, ParkUntilFurtherNotice, ResumeSchedule, settings
-                'attributes': Arg
-            }
-        }) 
-    }
+def mower_send_cmd(accessToken,client_id,mower_id,Command,Arg=None):
+    if (Arg==None):
+        json_args={'data':{'type':Command}}
+    else: 
+        json_args={'data':{'type':Command, 'attributes': {'duration' : int(Arg)}}}
+    print ('Executing command: %s' % json_args)
+    response = requests.post(AUTOMOWER_CONNECT_ENDPOINT + "/mowers/" + mower_id + "/actions",
+                         headers={'Authorization': 'Bearer ' + accessToken,
+                                 'X-Api-Key': client_id,
+                                 'Authorization-Provider': 'husqvarna',
+                                 'Content-Type': 'application/vnd.api+json'},
+                         json=json_args)
+    if (response.status_code == 202):
+        print ('Command executed succesfull')
+    else: 
+        print ('Failed to execute command. Response: %s exited with status code: %s' % (response.text, response.status_code))
+
+def mower_update_settings(accessToken,client_id,mower_id,Setting,Arg):
+    json_args={'data':{'type':'settings', 'attributes': {Setting : int(Arg)}}}
+    print ('Updating settings: %s' % json_args)
+    response = requests.post(AUTOMOWER_CONNECT_ENDPOINT + "/mowers/" + mower_id + "/settings",
+                         headers={'Authorization': 'Bearer ' + accessToken,
+                                 'X-Api-Key': client_id,
+                                 'Authorization-Provider': 'husqvarna',
+                                 'Content-Type': 'application/vnd.api+json'},
+                         json=json_args)
+    if (response.status_code == 202):
+        print ('Settings update succesfull')
+    else: 
+        print ('Failed to update settings. Response: %s exited with status code: %s' % (response.text, response.status_code))
+
+
 
 
 def app_print_logo():
@@ -381,13 +403,16 @@ def main(argv):
 
     # CASE 4: all ok, specific command for a specific bike received
     if (len(sys.argv) > 1) and not ("debug" in sys.argv):
+        if (sys.argv[2]=='Start'):
+            print ('Command received for mower with id: %s, executing command: %s with duration argument: %s' % (sys.argv[1],sys.argv[2],sys.argv[3]))
+            mower_send_cmd(ACCESS_TOKEN,CLIENT_ID,sys.argv[1],sys.argv[2],sys.argv[3])
+        elif (sys.argv[2]=='CuttingHeight'):
+            print ('Command received for mower with id: %s, updating settings: %s with argument: %s' % (sys.argv[1],sys.argv[2],sys.argv[3]))
+            mower_update_settings(ACCESS_TOKEN,CLIENT_ID,sys.argv[1],'cuttingHeight',sys.argv[3])
+        else:
+            print ('Command received for mower with id: %s, executing command: %s' % (sys.argv[1],sys.argv[2]))
+            mower_send_cmd(ACCESS_TOKEN,CLIENT_ID,sys.argv[1],sys.argv[2],None)
         return
-        #else:
-            #if (len(sys.argv) == 2) and (sys.argv[2] != 'remote_start_drive'):
-            #    True
-            #    # argv is of the form: CMD + vehicleid + command 
-            # v.command(sys.argv[2])
-            # Command logic goes here
 
 
     # CASE 5: all ok, all other cases
@@ -396,6 +421,7 @@ def main(argv):
 
     try:
         for mower in mowers_data:
+            mower_id = mower['id']
             mower_name = mower['attributes']['system']['name']
             mower_battery = mower['attributes']['battery']['batteryPercent']
             mower_mode = mower['attributes']['mower']['mode']
@@ -416,6 +442,7 @@ def main(argv):
             # --------------------------------------------------
 
             if 'debug' in argv:
+                print ('>>> Mower Id:\n%s\n'                % mower_id)
                 print ('>>> Mower Name:\n%s\n'              % mower_name)
                 print ('>>> Mower Battery:\n%s\n'           % mower_battery)
                 print ('>>> Mower Mode:\n%s\n'              % mower_mode)
@@ -436,7 +463,42 @@ def main(argv):
             print ('%sConnected:\t\t\t%s | color=%s' % (prefix, mower_humantime, color))
             print ('%s---' % prefix)                                                    
             print ('%sCutting Height:\t\t%s cm | color=%s' % (prefix, mower_cuttingheight, color))
+            for cuttingheight in range(2,9):
+                print ('%s--%s cm| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cuttingheight,cmd_path,mower_id,"CuttingHeight",cuttingheight,color_setting(mower_cuttingheight,cuttingheight,color,info_color)))
+            
             print ('%sActivity:\t\t\t\t%s | color=%s' % (prefix, pretty_print_activity(mower_activity), color))
+            if (mower_activity == "MOWING") :
+                print ('%s--Pause | refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"Pause",color))
+                print ('%s--Park  | color=%s' % (prefix, color))
+                print ('%s----Until further notice| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ParkUntilFurtherNotice",color))
+                print ('%s----Until next scheduled run| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ParkUntilNextSchedule",color))
+            if (mower_activity == "PARKED_IN_CS"):
+                print ('%s--Start  | color=%s' % (prefix, color))
+                if (mower_mode == "HOME"):
+                    print ('%s----Resume schedule| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ResumeSchedule",color))
+                print ('%s----Until further Notice| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",480,color))
+                print ('%s----For a number of minutes| color=%s' % (prefix,color))
+                print ('%s------30| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",30,color))
+                print ('%s------60| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",60,color))
+                print ('%s------120| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",120,color))
+                print ('%s------180| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",180,color))
+                print ('%s------360| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",360,color))
+                print ('%s------480| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",480,color))
+            if (mower_activity == "STOPPED_IN_GARDEN"):
+                print ('%s--Start  | color=%s' % (prefix, color))
+                print ('%s----Resume schedule| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ResumeSchedule",color))
+                print ('%s----Until further Notice| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3="%s" color=%s' % (prefix,cmd_path,mower_id,"Start",480,color))
+                print ('%s----For a number of minutes| color=%s' % (prefix,color))
+                print ('%s------30| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",30,color))
+                print ('%s------60| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",60,color))
+                print ('%s------120| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",120,color))
+                print ('%s------180| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",180,color))
+                print ('%s------360| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",360,color))
+                print ('%s------480| refresh=true terminal=true shell="%s" param1="%s" param2="%s" param3=%s color=%s' % (prefix,cmd_path,mower_id,"Start",480,color))
+                print ('%s--Park  | color=%s' % (prefix, color))
+                print ('%s----Until further notice| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ParkUntilFurtherNotice",color))
+                print ('%s----Until next scheduled run| refresh=true terminal=true shell="%s" param1="%s" param2="%s" color=%s' % (prefix,cmd_path,mower_id,"ParkUntilNextSchedule",color))
+
             print ('%sMode:\t\t\t\t%s | color=%s' % (prefix, pretty_print_mode(mower_mode), color))
             print ('%s---' % prefix)                                                    
 
