@@ -72,7 +72,7 @@ cmd_path = os.path.realpath(__file__)
 
 # Location tracking database
 locationdb = TinyDB(state_dir+'/myhusqvarna-locations.json')
-
+geolocdb   = TinyDB(state_dir+'/myhusqvarna-geoloc.json')
 
 # Nice ANSI colors
 CEND    = '\33[0m'
@@ -207,6 +207,23 @@ def retrieve_google_maps(latitude,longitude):
             location_sat.close()
     return [my_img1,my_img2]
 
+# Function to retrieve address for a given latitude and longitude
+def retrieve_geo_loc(latitude,longitude):
+    try:
+        # First try cache
+        result = geolocdb.search((Q.latitude==latitude) & (Q.longitude==longitude))[-1]['geoloc']
+        return result['response']
+    except:
+        # Then try google 
+
+        gmaps = googleclient('AIzaSyCtVR6-HQOVMYVGG6vOxWvPxjeggFz39mg')
+        location_address = gmaps.reverse_geocode((str(latitude),str(longitude)))[0]['formatted_address']
+
+        # Finally Update local cache
+        if _LOCATION_TRACKING_:
+            geolocdb.insert({'latitude':latitude,'longitude':longitude,'geoloc':location_address})
+        return location_address
+
 
 def get_oauth_token(client_id, client_secret):
     # Perform authorization code flow to obtain an access token
@@ -318,12 +335,12 @@ def init():
     # Here we do the setup
     # Store access_token in OS X keychain on first run
     print ('Enter your Husqvarna client_id:')
-    print ('Hint: '+MY_CLIENT_ID)
+    print ('Hint: '+str(MY_CLIENT_ID))
     init_client_id = getpass.getpass()
     if (init_client_id == ""): 
         init_client_id = MY_CLIENT_ID
     print ('Enter your Husqvarna client_secret:')
-    print ('Hint: '+MY_CLIENT_SECRET)
+    print ('Hint: '+str(MY_CLIENT_SECRET))
     init_client_secret = getpass.getpass()
     if (init_client_secret == ""):
         init_client_secret = MY_CLIENT_SECRET
@@ -387,7 +404,7 @@ def main(argv):
        requests.get('http://www.google.com',timeout=3)
     except:
        app_print_logo()
-       print ('\nNo internet connection | refresh=true terminal=false shell="%s" param1="%s" color=%s' % (cmd_path, 'true', color))
+       print ('No internet connection | refresh=true terminal=false shell="%s" param1="%s" color=%s' % (cmd_path, 'true', color))
        return
 
 
@@ -505,9 +522,9 @@ def main(argv):
             # --------------------------------------------------                        
             # LOCATION MENU                                                             
             # --------------------------------------------------                        
-                                                                                
-            gmaps = googleclient('AIzaSyCtVR6-HQOVMYVGG6vOxWvPxjeggFz39mg')             
-            mower_location_address = gmaps.reverse_geocode((str(mower_latitude),str(mower_longitude)))[0]['formatted_address']
+
+            mower_location_address = retrieve_geo_loc(mower_latitude,mower_longitude)
+
             print ('%sLocation:\t\t\t\t%s| color=%s' % (prefix, mower_location_address, color))
             print ('%sLat:\t\t\t\t\t%s| color=%s' % (prefix, mower_latitude, color))
             print ('%sLon:\t\t\t\t\t%s| color=%s' % (prefix, mower_longitude, color))
