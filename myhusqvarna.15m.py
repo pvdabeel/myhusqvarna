@@ -43,7 +43,7 @@ import CoreLocation as cl
 
 #from pyicloud   import PyiCloudService          # Icloud integration - schedule events in icloud agenda
 from datetime   import date
-from tinydb     import TinyDB                   # Keep track of location and husqvarna states
+from tinydb     import TinyDB , Query            # Keep track of location and husqvarna states
 from os.path    import expanduser
 from googlemaps import Client as googleclient   # Reverse lookup of addresses based on coordinates
 
@@ -211,11 +211,11 @@ def retrieve_google_maps(latitude,longitude):
 def retrieve_geo_loc(latitude,longitude):
     try:
         # First try cache
+        Q = Query()
         result = geolocdb.search((Q.latitude==latitude) & (Q.longitude==longitude))[-1]['geoloc']
         return result['response']
     except:
         # Then try google 
-
         gmaps = googleclient('AIzaSyCtVR6-HQOVMYVGG6vOxWvPxjeggFz39mg')
         location_address = gmaps.reverse_geocode((str(latitude),str(longitude)))[0]['formatted_address']
 
